@@ -38,6 +38,7 @@ public class NonAccumulatingGarbageCollectorMetricSet implements MetricSet {
     private GarbageCollectorMetricSet garbageCollectorMetricSet;
     private ScheduledExecutorService scheduledExecutorService;
     private long intervalMs;
+    // The name of the interval in the format last-<n>-<units>
     private String intervalInfix;
 
     /**
@@ -170,7 +171,7 @@ public class NonAccumulatingGarbageCollectorMetricSet implements MetricSet {
                     return value != null ? value : 0L;
                 }
             };
-            nonAccumulatingMetricMap.put(getIntervalName(metricEntry.getKey()), nonAccumulatingGauge);
+            nonAccumulatingMetricMap.put(createIntervalMetricKey(metricEntry.getKey()), nonAccumulatingGauge);
         }
 
         Gauge gcThroughputGauge = new Gauge<Double>() {
@@ -204,7 +205,15 @@ public class NonAccumulatingGarbageCollectorMetricSet implements MetricSet {
         return Collections.unmodifiableMap(nonAccumulatingMetricMap);
     }
 
-    private String getIntervalName(String key) {
+
+  /**
+   * Create the metric key for the interval metric. The interval metric key is built by taking the original key,
+   * splitting on the last {@code .} character, and then build a composite key which is
+   * {@code <first-part>.last-<n>-<units>.<second-part>}.
+   * @param key the original metric key to base the name off of
+   * @return the interval metric key name
+   */
+  private String createIntervalMetricKey(String key) {
         String prefix = "";
         String suffix = key;
 

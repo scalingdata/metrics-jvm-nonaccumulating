@@ -122,7 +122,7 @@ public class NonAccumulatingGarbageCollectorMetricSetTest {
         metricRegistry.registerAll(new NonAccumulatingGarbageCollectorMetricSet(garbageCollectorMetricSet, 5000));
         for (String name : metricRegistry.getNames()) {
             if (!NonAccumulatingGarbageCollectorMetricSet.GC_THROUGHPUT_METRIC_NAME.equals(name)) {
-                Assert.assertTrue("Unexpected metric name: " + name, name.contains("last-5-seconds"));
+                Assert.assertTrue("Unexpected metric name: " + name, name.matches(".*\\.last-5-seconds\\.[^.]+$"));
             }
         }
     }
@@ -134,7 +134,7 @@ public class NonAccumulatingGarbageCollectorMetricSetTest {
         metricRegistry.registerAll(new NonAccumulatingGarbageCollectorMetricSet(garbageCollectorMetricSet, 300000));
         for (String name : metricRegistry.getNames()) {
             if (!NonAccumulatingGarbageCollectorMetricSet.GC_THROUGHPUT_METRIC_NAME.equals(name)) {
-                Assert.assertTrue("Unexpected metric name: " + name, name.contains("last-5-minutes"));
+                Assert.assertTrue("Unexpected metric name: " + name, name.matches(".*\\.last-5-minutes\\.[^.]+$"));
             }
         }
 
@@ -142,7 +142,7 @@ public class NonAccumulatingGarbageCollectorMetricSetTest {
         metricRegistry.registerAll(new NonAccumulatingGarbageCollectorMetricSet(garbageCollectorMetricSet, 60000));
         for (String name : metricRegistry.getNames()) {
             if (!NonAccumulatingGarbageCollectorMetricSet.GC_THROUGHPUT_METRIC_NAME.equals(name)) {
-                Assert.assertTrue("Unexpected metric name: " + name, name.contains("last-1-minute"));
+                Assert.assertTrue("Unexpected metric name: " + name, name.matches(".*\\.last-1-minute\\.[^.]+$"));
             }
         }
     }

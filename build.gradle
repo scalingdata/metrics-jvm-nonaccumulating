@@ -48,10 +48,12 @@ uploadArchives {
     repositories {
         mavenDeployer {
             repository(url: "http://repository.rocana.com/content/repositories/com.scalingdata.releases") {
+                // The username and password are set either in ~/.gradle/gradle.properties or by passing -P in the shell
                 authentication(userName: rocanaReleaseUser, password: rocanaReleasePassword)
             }
 
             snapshotRepository(url: "http://repository.rocana.com/content/repositories/com.scalingdata.snapshots") {
+                // The username and password are set either in ~/.gradle/gradle.properties or by passing -P in the shell
                 authentication(userName: rocanaSnapshotUser, password: rocanaSnapshotPassword)
             }
         }

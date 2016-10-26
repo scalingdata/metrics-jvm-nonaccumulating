@@ -2,8 +2,13 @@ package com.heapwhisperer.metrics.jvm;
 
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.Metric;
+import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.MetricSet;
 import com.codahale.metrics.jvm.GarbageCollectorMetricSet;
+import org.apache.commons.lang3.concurrent.BasicThreadFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -11,9 +16,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import org.apache.commons.lang3.concurrent.BasicThreadFactory;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * This metric set class alters the behavior of the {@link GarbageCollectorMetricSet},
@@ -35,19 +37,21 @@ public class NonAccumulatingGarbageCollectorMetricSet implements MetricSet {
     private Map<String, Long> nonAccumulatingValues;
     private GarbageCollectorMetricSet garbageCollectorMetricSet;
     private ScheduledExecutorService scheduledExecutorService;
-    private long interval;
+    private long intervalMs;
+    // The name of the interval in the format last-<n>-<units>
+    private String intervalInfix;
 
     /**
      * Constructor does not take an executor service, instead deferring
      * to the default scheduled executor service provided by this class.
      *
      * @param garbageCollectorMetricSet a metric set that collects counts and times of garbage collections
-     * @param interval the time interval over which to calculate non-accumulating gauge readings
+     * @param intervalMs the time interval in milliseconds over which to calculate non-accumulating gauge readings
      *                 for all the gauges in {@code garbageCollectorMetricSet}
      */
     public NonAccumulatingGarbageCollectorMetricSet(
-            GarbageCollectorMetricSet garbageCollectorMetricSet, long interval) {
-        this(garbageCollectorMetricSet, interval, null);
+            GarbageCollectorMetricSet garbageCollectorMetricSet, long intervalMs) {
+        this(garbageCollectorMetricSet, intervalMs, null);
     }
 
     /**
@@ -55,17 +59,26 @@ public class NonAccumulatingGarbageCollectorMetricSet implements MetricSet {
      * calculate non-accumulating gauge readings at periodic intervals.
      *
      * @param garbageCollectorMetricSet a metric set that collects counts and times of garbage collections
-     * @param interval the time interval over which to calculate non-accumulating gauge readings
+     * @param intervalMs the time interval in milliseconds over which to calculate non-accumulating gauge readings
      *                 for all the gauges in {@code garbageCollectorMetricSet}
      * @param scheduledExecutorService scheduled executor service that runs the task to calculate
      *                                 non-accumulating gauge readings at a frequency determined by
-     *                                 {@code interval}.
+     *                                 {@code intervalMs}.
      */
     public NonAccumulatingGarbageCollectorMetricSet(
-            GarbageCollectorMetricSet garbageCollectorMetricSet, long interval,
+            GarbageCollectorMetricSet garbageCollectorMetricSet, long intervalMs,
             ScheduledExecutorService scheduledExecutorService) {
         this.garbageCollectorMetricSet = garbageCollectorMetricSet;
-        this.interval = interval;
+        this.intervalMs = intervalMs;
+        if (intervalMs >= 60000) {
+            long minutes = TimeUnit.MILLISECONDS.toMinutes(intervalMs);
+            this.intervalInfix = "last-" + minutes + "-minute" + (minutes > 1 ? "s" : "");
+        } else if (intervalMs > 1000) {
+            long seconds = TimeUnit.MILLISECONDS.toSeconds(intervalMs);
+            this.intervalInfix = "last-" + seconds + "-second" + (seconds > 1 ? "s" : "");
+        } else {
+            this.intervalInfix = "last-" + intervalMs + "-milliseconds";
+        }
         previousValues = new HashMap<String, Long>();
         nonAccumulatingValues = new ConcurrentHashMap<String, Long>();
         if (scheduledExecutorService == null) {
@@ -95,7 +108,7 @@ public class NonAccumulatingGarbageCollectorMetricSet implements MetricSet {
                     LOG.error("RuntimeException thrown in NonAccumulatingGarbageCollectorMetricSet. Exception was suppressed.");
                 }
             }
-        }, 0, interval, TimeUnit.MILLISECONDS);
+        }, 0, intervalMs, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -145,7 +158,7 @@ public class NonAccumulatingGarbageCollectorMetricSet implements MetricSet {
                  * For reporters that call this method, it makes sense to align the frequency of
                  * those calls with the frequency of the background updates of non-accumulating
                  * gauges. For example, if a reporter calls this method every minute, then the
-                 * {@code interval} setting of this metric-set should also be 1 minute. Calling
+                 * {@code intervalMs} setting of this metric-set should also be 1 minute. Calling
                  * this method more or less frequently does not impact the operation of this
                  * class--but the caller will either get repeated values (for more frequent calls),
                  * or will miss some values (for less frequent calls).
@@ -158,7 +171,7 @@ public class NonAccumulatingGarbageCollectorMetricSet implements MetricSet {
                     return value != null ? value : 0L;
                 }
             };
-            nonAccumulatingMetricMap.put(metricEntry.getKey(), nonAccumulatingGauge);
+            nonAccumulatingMetricMap.put(createIntervalMetricKey(metricEntry.getKey()), nonAccumulatingGauge);
         }
 
         Gauge gcThroughputGauge = new Gauge<Double>() {
@@ -172,7 +185,7 @@ public class NonAccumulatingGarbageCollectorMetricSet implements MetricSet {
              * 59,700 ms were available to the application. 59,700 / 60,000 = 99.5% GC throughput.
              *
              * @return a value between 0.0 and 100.0 that represents the garbage collector
-             * throughput for the current interval (as defined by {@code interval}
+             * throughput for the current interval (as defined by {@code intervalMs}
              */
             @Override
             public Double getValue() {
@@ -184,11 +197,31 @@ public class NonAccumulatingGarbageCollectorMetricSet implements MetricSet {
                     }
                 }
 
-                return 100 - ((totalGCTime / interval) * 100);
+                return 100 - ((totalGCTime / intervalMs) * 100);
             }
         };
         nonAccumulatingMetricMap.put(GC_THROUGHPUT_METRIC_NAME, gcThroughputGauge);
 
         return Collections.unmodifiableMap(nonAccumulatingMetricMap);
+    }
+
+
+  /**
+   * Create the metric key for the interval metric. The interval metric key is built by taking the original key,
+   * splitting on the last {@code .} character, and then build a composite key which is
+   * {@code <first-part>.last-<n>-<units>.<second-part>}.
+   * @param key the original metric key to base the name off of
+   * @return the interval metric key name
+   */
+  private String createIntervalMetricKey(String key) {
+        String prefix = "";
+        String suffix = key;
+
+        int lastDot = key.lastIndexOf('.');
+        if (lastDot > 0) {
+            prefix = key.substring(0, lastDot);
+            suffix = key.substring(lastDot + 1);
+        }
+        return MetricRegistry.name(prefix, intervalInfix, suffix);
     }
 }

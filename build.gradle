@@ -7,6 +7,9 @@ plugins {
 repositories {
     mavenLocal()
     mavenCentral()
+    maven {
+        url "http://repository.rocana.com/content/groups/com.scalingdata"
+    }
 }
 
 dependencies {
@@ -39,4 +42,18 @@ task wrapper(type: Wrapper) {
     description = "Generates a new Gradle Wrapper"
     group = "build"
     gradleVersion = '2.4'
+}
+
+uploadArchives {
+    repositories {
+        mavenDeployer {
+            repository(url: "http://repository.rocana.com/content/repositories/com.scalingdata.releases") {
+                authentication(userName: rocanaReleaseUser, password: rocanaReleasePassword)
+            }
+
+            snapshotRepository(url: "http://repository.rocana.com/content/repositories/com.scalingdata.snapshots") {
+                authentication(userName: rocanaSnapshotUser, password: rocanaSnapshotPassword)
+            }
+        }
+    }
 }

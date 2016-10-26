@@ -1,8 +1,19 @@
 package com.heapwhisperer.metrics.jvm;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.Metric;
+import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.jvm.GarbageCollectorMetricSet;
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -17,15 +28,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 public class NonAccumulatingGarbageCollectorMetricSetTest {
     GarbageCollectorMetricSet garbageCollectorMetricSet;
@@ -54,16 +56,16 @@ public class NonAccumulatingGarbageCollectorMetricSetTest {
 
         // on first call, there is no previous data, so it should just return the unaltered mock data
         Map<String, Metric> actualMetricMap = nonAccumulatingGarbageCollectorMetricSet.getMetrics();
-        assertEquals(4L, ((Gauge) actualMetricMap.get("count")).getValue());
-        assertEquals(800L, ((Gauge) actualMetricMap.get("time")).getValue());
+        assertEquals(4L, ((Gauge) actualMetricMap.get("last-1-minute.count")).getValue());
+        assertEquals(800L, ((Gauge) actualMetricMap.get("last-1-minute.time")).getValue());
         assertEquals(98.666, (Double) ((Gauge) actualMetricMap.get(
                 NonAccumulatingGarbageCollectorMetricSet.GC_THROUGHPUT_METRIC_NAME)).getValue(), 0.001);
         assertEquals(3, actualMetricMap.size());
 
         // on second call, we still have not run the background process that updates the
         // non-accumulating values, so we expect to get the same readings again
-        assertEquals(4L, ((Gauge) actualMetricMap.get("count")).getValue());
-        assertEquals(800L, ((Gauge) actualMetricMap.get("time")).getValue());
+        assertEquals(4L, ((Gauge) actualMetricMap.get("last-1-minute.count")).getValue());
+        assertEquals(800L, ((Gauge) actualMetricMap.get("last-1-minute.time")).getValue());
         assertEquals(98.666, (Double) ((Gauge) actualMetricMap.get(
                 NonAccumulatingGarbageCollectorMetricSet.GC_THROUGHPUT_METRIC_NAME)).getValue(), 0.001);
         assertEquals(3, actualMetricMap.size());
@@ -75,8 +77,8 @@ public class NonAccumulatingGarbageCollectorMetricSetTest {
         // now previous data should be subtracted from current gauge readings.
         // Since the readings were the same in both cases, the difference should be 0.
         // Since there were no increases in the GC time, we expect GC throughput to be 100
-        assertEquals(0L, ((Gauge) actualMetricMap.get("count")).getValue());
-        assertEquals(0L, ((Gauge) actualMetricMap.get("time")).getValue());
+        assertEquals(0L, ((Gauge) actualMetricMap.get("last-1-minute.count")).getValue());
+        assertEquals(0L, ((Gauge) actualMetricMap.get("last-1-minute.time")).getValue());
         assertEquals(100.000, (Double) ((Gauge) actualMetricMap.get(
                 NonAccumulatingGarbageCollectorMetricSet.GC_THROUGHPUT_METRIC_NAME)).getValue(), 0.001);
         assertEquals(3, actualMetricMap.size());
@@ -87,8 +89,8 @@ public class NonAccumulatingGarbageCollectorMetricSetTest {
         mockMetricMap = getStringMetricMap(6L, 1100L);
         when(garbageCollectorMetricSet.getMetrics()).thenReturn(mockMetricMap);
         nonAccumulatingGarbageCollectorMetricSet.scheduleBackgroundCollectionOfNonAccumulatingValues();
-        assertEquals(2L, ((Gauge) actualMetricMap.get("count")).getValue());
-        assertEquals(300L, ((Gauge) actualMetricMap.get("time")).getValue());
+        assertEquals(2L, ((Gauge) actualMetricMap.get("last-1-minute.count")).getValue());
+        assertEquals(300L, ((Gauge) actualMetricMap.get("last-1-minute.time")).getValue());
         assertEquals(99.5, (Double) ((Gauge) actualMetricMap.get(
                 NonAccumulatingGarbageCollectorMetricSet.GC_THROUGHPUT_METRIC_NAME)).getValue(), 0.001);
         assertEquals(3, actualMetricMap.size());
@@ -103,6 +105,46 @@ public class NonAccumulatingGarbageCollectorMetricSetTest {
                 garbageCollectorMetricSet, interval);
 
         assertTrue(foundBackgroundUpdateThread());
+    }
+
+    @Test
+    public void testUniqueMetricNames() throws Exception {
+        GarbageCollectorMetricSet garbageCollectorMetricSet = new GarbageCollectorMetricSet();
+        MetricRegistry metricRegistry = new MetricRegistry();
+        metricRegistry.registerAll(garbageCollectorMetricSet);
+        metricRegistry.registerAll(new NonAccumulatingGarbageCollectorMetricSet(garbageCollectorMetricSet, 5));
+    }
+
+    @Test
+    public void testMetricNamesSeconds() throws Exception {
+        GarbageCollectorMetricSet garbageCollectorMetricSet = new GarbageCollectorMetricSet();
+        MetricRegistry metricRegistry = new MetricRegistry();
+        metricRegistry.registerAll(new NonAccumulatingGarbageCollectorMetricSet(garbageCollectorMetricSet, 5000));
+        for (String name : metricRegistry.getNames()) {
+            if (!NonAccumulatingGarbageCollectorMetricSet.GC_THROUGHPUT_METRIC_NAME.equals(name)) {
+                Assert.assertTrue("Unexpected metric name: " + name, name.contains("last-5-seconds"));
+            }
+        }
+    }
+
+    @Test
+    public void testMetricNamesMinutes() throws Exception {
+        GarbageCollectorMetricSet garbageCollectorMetricSet = new GarbageCollectorMetricSet();
+        MetricRegistry metricRegistry = new MetricRegistry();
+        metricRegistry.registerAll(new NonAccumulatingGarbageCollectorMetricSet(garbageCollectorMetricSet, 300000));
+        for (String name : metricRegistry.getNames()) {
+            if (!NonAccumulatingGarbageCollectorMetricSet.GC_THROUGHPUT_METRIC_NAME.equals(name)) {
+                Assert.assertTrue("Unexpected metric name: " + name, name.contains("last-5-minutes"));
+            }
+        }
+
+        metricRegistry = new MetricRegistry();
+        metricRegistry.registerAll(new NonAccumulatingGarbageCollectorMetricSet(garbageCollectorMetricSet, 60000));
+        for (String name : metricRegistry.getNames()) {
+            if (!NonAccumulatingGarbageCollectorMetricSet.GC_THROUGHPUT_METRIC_NAME.equals(name)) {
+                Assert.assertTrue("Unexpected metric name: " + name, name.contains("last-1-minute"));
+            }
+        }
     }
 
     private Boolean foundBackgroundUpdateThread() {

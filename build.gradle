@@ -47,6 +47,11 @@ task wrapper(type: Wrapper) {
 
 release {
     tagTemplate = 'metrics-jvm-nonaccumulating-${version}'
+
+    // Only for testing, remove before merging to master
+    git {
+        requireBranch = ''
+    }
 }
 
 uploadArchives {

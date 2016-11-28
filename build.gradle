@@ -61,6 +61,7 @@ uploadArchives {
                 // The username and password are set either in ~/.gradle/gradle.properties or by passing -P in the shell
                 authentication(userName: rocanaSnapshotUser, password: rocanaSnapshotPassword)
             }
+            pom.artifactId = 'metrics-jvm-nonaccumulating'
         }
     }
 }
